@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: external-dns
+spec:
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: external-dns
+  template:
+    metadata:
+      labels:
+        app: external-dns
+    spec:
+      containers:
+      - name: external-dns
+        image: registry.k8s.io/external-dns/external-dns:v0.14.0
+        args:
+        - --source=ingress
+        - --source=service
+        - --provider=webhook
+      - name: external-dns-webhook-provider
+        image: ghcr.io/mrueg/external-dns-netcup-webhook:main
+        args:
+        - --domain-filter="example.com"
+        - --netcup-customer-id="YOUR_CUSTOMER_ID"
+        env:
+        - name: NETCUP_API_KEY
+          valueFrom:
+            secretKeyRef:
+              key: NETCUP_API_KEY
+              name: netcup-api-key
+        - name: NETCUP_API_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: NETCUP_API_PASSWORD
+              name: netcup-api-password
+

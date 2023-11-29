@@ -15,3 +15,7 @@ lint:
 .PHONY: test
 test:
 	go test ./...
+
+.PHONY: generate
+generate:
+	embedmd -w `find . -path ./vendor -prune -o -name "*.md" -print`

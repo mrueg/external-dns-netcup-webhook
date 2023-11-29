@@ -31,6 +31,7 @@ Then apply one of the following manifests file to deploy external-dns.
 
 ### Manifest (for clusters without RBAC enabled)
 
+[embedmd]:# (example/external-dns.yaml)
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -49,13 +50,13 @@ spec:
     spec:
       containers:
       - name: external-dns
-        image: registry.k8s.io/external-dns/external-dns:latest
+        image: registry.k8s.io/external-dns/external-dns:v0.14.0
         args:
         - --source=ingress
         - --source=service
         - --provider=webhook
       - name: external-dns-webhook-provider
-        image: ghcr.io/mrueg/external-dns-netcup-webhook:latest
+        image: ghcr.io/mrueg/external-dns-netcup-webhook:main
         args:
         - --domain-filter="example.com"
         - --netcup-customer-id="YOUR_CUSTOMER_ID"
@@ -77,6 +78,7 @@ spec:
 
 Create a service file called 'nginx.yaml' with the following contents:
 
+[embedmd]:# (example/nginx.yaml)
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -146,3 +148,4 @@ Now that we have verified that external-dns will automatically manage Netcup DNS
 ```
 $ kubectl delete -f nginx.yaml
 $ kubectl delete -f externaldns.yaml
+```
