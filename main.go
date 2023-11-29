@@ -50,7 +50,7 @@ func main() {
 	}
 	logger = level.NewFilter(logger, level.Allow(level.ParseDefault(*logLevel, level.InfoValue())))
 	logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
-	_ = level.Info(logger).Log("msg", "starting External DNS Netcup webhook plugin", "version", version.Version, "revision", version.Revision)
+	_ = level.Info(logger).Log("msg", "starting external-dns Netcup webhook plugin", "version", version.Version, "revision", version.Revision)
 	_ = level.Debug(logger).Log("customer-id", *customerID, "api-key", *apiKey, "api-password", *apiPassword)
 
 	prometheus.DefaultRegisterer.MustRegister(version.NewCollector("external_dns_netcup"))
@@ -129,7 +129,7 @@ func buildMetricsServer(registry prometheus.Gatherer, logger log.Logger) *http.S
 	// Add index
 	landingConfig := web.LandingConfig{
 		Name:        "external-dns-netcup-webhook",
-		Description: "External DNS webhook provider for Netcup",
+		Description: "external-dns webhook provider for Netcup",
 		Version:     version.Info(),
 		Links: []web.LandingLinks{
 			{
