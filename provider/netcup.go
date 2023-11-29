@@ -104,7 +104,9 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 			}
 		}
 	}
-	_ = level.Debug(p.logger).Log("msg", "endpoints collected", "endpoints", endpoints.String())
+	for _, endpointItem := range endpoints {
+		_ = level.Debug(p.logger).Log("msg", "endpoints collected", "endpoints", endpointItem.String())
+	}
 	return endpoints, nil
 }
 
