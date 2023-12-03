@@ -2,7 +2,7 @@
 
 External-DNS Webhook Provider to manage Netcup DNS Records
 
-> [!INFO]
+> [!NOTE]
 > This repository is not affiliated with Netcup.
 
 > [!WARNING]
@@ -31,7 +31,10 @@ Besides the API key and password, it is mandatory to provide a customer id as we
 
 Then apply one of the following manifests file to deploy external-dns.
 
-### Manifest (for clusters without RBAC enabled)
+```
+$ kubectl create -f example/nginx.yaml
+```
+
 
 [embedmd]:# (example/external-dns.yaml)
 ```yaml
@@ -167,7 +170,7 @@ will cause external-dns to remove the corresponding DNS records.
 Create the deployment and service:
 
 ```
-$ kubectl create -f nginx.yaml
+$ kubectl create -f example/nginx.yaml
 ```
 
 Depending where you run your service it can take a little while for your cloud provider to create an external IP for the service.
@@ -186,6 +189,6 @@ The records should show the external IP address of the service as the A record f
 Now that we have verified that external-dns will automatically manage Netcup DNS records, we can delete the tutorial's example:
 
 ```
-$ kubectl delete -f nginx.yaml
-$ kubectl delete -f externaldns.yaml
+$ kubectl delete -f example/nginx.yaml
+$ kubectl delete -f example/external-dns.yaml
 ```
