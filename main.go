@@ -150,6 +150,7 @@ func buildMetricsServer(registry prometheus.Gatherer, logger log.Logger) *http.S
 func buildWebhookServer(logger log.Logger) (*http.ServeMux, error) {
 	mux := http.NewServeMux()
 
+        var rootPath = "/"
 	var healthzPath = "/healthz"
 	var recordsPath = "/records"
 	var adjustEndpointsPath = "/adjustendpoints"
@@ -170,7 +171,7 @@ func buildWebhookServer(logger log.Logger) (*http.ServeMux, error) {
 	})
 
 	// Add negotiatePath
-	mux.HandleFunc("/", p.NegotiateHandler)
+	mux.HandleFunc(rootPath, p.NegotiateHandler)
 	// Add adjustEndpointsPath
 	mux.HandleFunc(adjustEndpointsPath, p.AdjustEndpointsHandler)
 	// Add recordsPath

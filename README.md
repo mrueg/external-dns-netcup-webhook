@@ -2,6 +2,8 @@
 
 External-DNS Webhook Provider to manage Netcup DNS Records
 
+> [!INFO]
+> This repository is not affiliated with Netcup.
 
 > [!WARNING]
 > Completely untested code. Might eat your DNS records. You have been warned.
@@ -33,6 +35,39 @@ Then apply one of the following manifests file to deploy external-dns.
 
 [embedmd]:# (example/external-dns.yaml)
 ```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-dns
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: external-dns
+rules:
+- apiGroups: [""]
+  resources: ["services","endpoints","pods"]
+  verbs: ["get","watch","list"]
+- apiGroups: ["extensions","networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get","watch","list"]
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: external-dns-viewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: external-dns
+subjects:
+- kind: ServiceAccount
+  name: external-dns
+  namespace: default
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -48,18 +83,22 @@ spec:
       labels:
         app: external-dns
     spec:
+      serviceAccountName: external-dns
       containers:
       - name: external-dns
         image: registry.k8s.io/external-dns/external-dns:v0.14.0
         args:
+        - --log-level=debug
         - --source=ingress
         - --source=service
         - --provider=webhook
       - name: external-dns-webhook-provider
-        image: ghcr.io/mrueg/external-dns-netcup-webhook:main
+        image: ghcr.io/mrueg/external-dns-netcup-webhook:latest
+        imagePullPolicy: Always
         args:
-        - --domain-filter="example.com"
-        - --netcup-customer-id="YOUR_CUSTOMER_ID"
+        - --log-level=debug
+        - --domain-filter=YOUR_DOMAIN
+        - --netcup-customer-id=YOUR_ID
         env:
         - name: NETCUP_API_KEY
           valueFrom:
@@ -104,7 +143,8 @@ kind: Service
 metadata:
   name: nginx
   annotations:
-    external-dns.alpha.kubernetes.io/hostname: example.com
+    external-dns.alpha.kubernetes.io/hostname: test.example.com
+    external-dns.alpha.kubernetes.io/internal-hostname: internaltest.example.com
 spec:
   selector:
     app: nginx
