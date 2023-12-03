@@ -32,9 +32,8 @@ Besides the API key and password, it is mandatory to provide a customer id as we
 Then apply one of the following manifests file to deploy external-dns.
 
 ```
-$ kubectl create -f example/nginx.yaml
+$ kubectl create -f example/external-dns.yaml
 ```
-
 
 [embedmd]:# (example/external-dns.yaml)
 ```yaml
@@ -118,7 +117,11 @@ spec:
 
 ### Deploying an Nginx Service
 
-Create a service file called 'nginx.yaml' with the following contents:
+Create the deployment and service:
+
+```
+$ kubectl create -f example/nginx.yaml
+```
 
 [embedmd]:# (example/nginx.yaml)
 ```yaml
@@ -166,12 +169,6 @@ This annotation is optional, if you won't set it, it will be 1 (automatic) which
 
 external-dns uses this annotation to determine what services should be registered with DNS.  Removing the annotation
 will cause external-dns to remove the corresponding DNS records.
-
-Create the deployment and service:
-
-```
-$ kubectl create -f example/nginx.yaml
-```
 
 Depending where you run your service it can take a little while for your cloud provider to create an external IP for the service.
 
