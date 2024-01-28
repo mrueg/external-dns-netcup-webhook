@@ -90,7 +90,11 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 			// query the records of the domain
 			recs, err := p.session.InfoDnsRecords(domain)
 			if err != nil {
-				return nil, fmt.Errorf("unable to get DNS records for domain '%v': %v", domain, err)
+				if p.session.LastResponse != nil && p.session.LastResponse.Status == string(nc.StatusError) && p.session.LastResponse.StatusCode == 5029 {
+					_ = level.Debug(p.logger).Log("msg", "no records exist", "domain", domain, "error", err)
+				} else {
+					return nil, fmt.Errorf("unable to get DNS records for domain '%v': %v", domain, err)
+				}
 			}
 			_ = level.Info(p.logger).Log("msg", "got DNS records for domain", "domain", domain)
 			for _, rec := range *recs {
@@ -186,7 +190,11 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 		// Gather records from API to extract the record ID which is necessary for updating/deleting the record
 		recs, err := p.session.InfoDnsRecords(zoneName)
 		if err != nil {
-			_ = level.Error(p.logger).Log("msg", "unable to get DNS records for domain", "zone", zoneName, "error", err)
+			if p.session.LastResponse != nil && p.session.LastResponse.Status == string(nc.StatusError) && p.session.LastResponse.StatusCode == 5029 {
+				_ = level.Debug(p.logger).Log("msg", "no records exist", "zone", zoneName, "error", err)
+			} else {
+				_ = level.Error(p.logger).Log("msg", "unable to get DNS records for domain", "zone", zoneName, "error", err)
+			}
 		}
 		change := &NetcupChange{
 			Create:    convertToNetcupRecord(recs, c.Create, zoneName, false),
