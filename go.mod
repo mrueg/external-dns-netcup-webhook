@@ -3,7 +3,7 @@ module github.com/mrueg/external-dns-netcup-webhook
 go 1.21
 
 require (
-	github.com/aellwein/netcup-dns-api v1.0.3
+	github.com/aellwein/netcup-dns-api v1.0.4
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/go-kit/log v0.2.1
 	github.com/oklog/run v1.1.0
