@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
@@ -51,7 +52,7 @@ func main() {
 	logger = level.NewFilter(logger, level.Allow(level.ParseDefault(*logLevel, level.InfoValue())))
 	logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
 	_ = level.Info(logger).Log("msg", "starting external-dns Netcup webhook plugin", "version", version.Version, "revision", version.Revision)
-	_ = level.Debug(logger).Log("customer-id", *customerID, "api-key", *apiKey, "api-password", *apiPassword)
+	_ = level.Debug(logger).Log("customer-id", *customerID, "api-key", strings.Repeat("*", len(*apiKey)), "api-password", strings.Repeat("*", len(*apiPassword)))
 
 	prometheus.DefaultRegisterer.MustRegister(version.NewCollector("external_dns_netcup"))
 
