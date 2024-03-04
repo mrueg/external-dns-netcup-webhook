@@ -10,7 +10,7 @@ require (
 	github.com/prometheus/client_golang v1.18.0
 	github.com/prometheus/common v0.48.0
 	github.com/prometheus/exporter-toolkit v0.11.0
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	sigs.k8s.io/external-dns v0.14.1-0.20240126133243-1bc685774ed3
 )
 
