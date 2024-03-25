@@ -15,6 +15,7 @@ import (
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	cversion "github.com/prometheus/client_golang/prometheus/collectors/version"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/exporter-toolkit/web"
 	webhook "sigs.k8s.io/external-dns/provider/webhook/api"
@@ -54,7 +55,7 @@ func main() {
 	_ = level.Info(logger).Log("msg", "starting external-dns Netcup webhook plugin", "version", version.Version, "revision", version.Revision)
 	_ = level.Debug(logger).Log("customer-id", *customerID, "api-key", strings.Repeat("*", len(*apiKey)), "api-password", strings.Repeat("*", len(*apiPassword)))
 
-	prometheus.DefaultRegisterer.MustRegister(version.NewCollector("external_dns_netcup"))
+	prometheus.DefaultRegisterer.MustRegister(cversion.NewCollector("external_dns_netcup"))
 
 	metricsMux := buildMetricsServer(prometheus.DefaultGatherer, logger)
 	metricsServer := http.Server{
