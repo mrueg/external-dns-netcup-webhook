@@ -2,7 +2,7 @@ module github.com/mrueg/external-dns-netcup-webhook
 
 go 1.22.2
 
-toolchain go1.22.3
+toolchain go1.23.0
 
 require (
 	github.com/aellwein/netcup-dns-api v1.0.5
