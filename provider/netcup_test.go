@@ -16,14 +16,11 @@ package netcup
 
 import (
 	"context"
-	"os"
+	"log/slog"
 	"testing"
 
 	nc "github.com/aellwein/netcup-dns-api/pkg/v1"
-
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
-
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/assert"
 	"sigs.k8s.io/external-dns/endpoint"
 	"sigs.k8s.io/external-dns/plan"
@@ -182,10 +179,9 @@ func testConvertToNetcupRecord(t *testing.T) {
 
 func testNewNetcupProvider(t *testing.T) {
 	domainFilter := []string{"example.com"}
-	var logger log.Logger
-	logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	logger = level.NewFilter(logger, level.Allow(level.InfoValue()))
-	logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
+	var logger *slog.Logger
+	promslogConfig := &promslog.Config{}
+	logger = promslog.New(promslogConfig)
 
 	p, err := NewNetcupProvider(&domainFilter, 10, "KEY", "PASSWORD", true, logger)
 	assert.NotNil(t, p.client)
@@ -208,10 +204,9 @@ func testNewNetcupProvider(t *testing.T) {
 
 func testApplyChanges(t *testing.T) {
 	domainFilter := []string{"example.com"}
-	var logger log.Logger
-	logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	logger = level.NewFilter(logger, level.Allow(level.InfoValue()))
-	logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
+	var logger *slog.Logger
+	promslogConfig := &promslog.Config{}
+	logger = promslog.New(promslogConfig)
 
 	p, _ := NewNetcupProvider(&domainFilter, 10, "KEY", "PASSWORD", true, logger)
 	changes1 := &plan.Changes{
@@ -272,11 +267,9 @@ func testApplyChanges(t *testing.T) {
 
 func testRecords(t *testing.T) {
 	domainFilter := []string{"example.com"}
-	var logger log.Logger
-	logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	logger = level.NewFilter(logger, level.Allow(level.InfoValue()))
-	logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
-
+	var logger *slog.Logger
+	promslogConfig := &promslog.Config{}
+	logger = promslog.New(promslogConfig)
 	p, _ := NewNetcupProvider(&domainFilter, 10, "KEY", "PASSWORD", true, logger)
 	ep, err := p.Records(context.TODO())
 	assert.Equal(t, []*endpoint.Endpoint{}, ep)

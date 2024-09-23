@@ -3,12 +3,11 @@ package netcup
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 
 	nc "github.com/aellwein/netcup-dns-api/pkg/v1"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 
 	"sigs.k8s.io/external-dns/endpoint"
 	"sigs.k8s.io/external-dns/plan"
@@ -22,7 +21,7 @@ type NetcupProvider struct {
 	session      *nc.NetcupSession
 	domainFilter endpoint.DomainFilter
 	dryRun       bool
-	logger       log.Logger
+	logger       *slog.Logger
 }
 
 // NetcupChange includes the changesets that need to be applied to the Netcup CCP API
@@ -34,7 +33,7 @@ type NetcupChange struct {
 }
 
 // NewNetcupProvider creates a new provider including the netcup CCP API client
-func NewNetcupProvider(domainFilterList *[]string, customerID int, apiKey string, apiPassword string, dryRun bool, logger log.Logger) (*NetcupProvider, error) {
+func NewNetcupProvider(domainFilterList *[]string, customerID int, apiKey string, apiPassword string, dryRun bool, logger *slog.Logger) (*NetcupProvider, error) {
 	domainFilter := endpoint.NewDomainFilter(*domainFilterList)
 
 	if !domainFilter.IsConfigured() {
@@ -68,7 +67,7 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 	endpoints := make([]*endpoint.Endpoint, 0)
 
 	if p.dryRun {
-		_ = level.Debug(p.logger).Log("msg", "dry run - skipping login")
+		p.logger.Debug("dry run - skipping login")
 	} else {
 		err := p.ensureLogin()
 		if err != nil {
@@ -91,12 +90,12 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 			recs, err := p.session.InfoDnsRecords(domain)
 			if err != nil {
 				if p.session.LastResponse != nil && p.session.LastResponse.Status == string(nc.StatusError) && p.session.LastResponse.StatusCode == 5029 {
-					_ = level.Debug(p.logger).Log("msg", "no records exist", "domain", domain, "error", err)
+					p.logger.Debug("no records exist", "domain", domain, "error", err.Error())
 				} else {
 					return nil, fmt.Errorf("unable to get DNS records for domain '%v': %v", domain, err)
 				}
 			}
-			_ = level.Info(p.logger).Log("msg", "got DNS records for domain", "domain", domain)
+			p.logger.Info("got DNS records for domain", "domain", domain)
 			for _, rec := range *recs {
 				name := fmt.Sprintf("%s.%s", rec.Hostname, domain)
 				if rec.Hostname == "@" {
@@ -109,7 +108,7 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 		}
 	}
 	for _, endpointItem := range endpoints {
-		_ = level.Debug(p.logger).Log("msg", "endpoints collected", "endpoints", endpointItem.String())
+		p.logger.Debug("endpoints collected", "endpoints", endpointItem.String())
 	}
 	return endpoints, nil
 }
@@ -117,12 +116,12 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 // ApplyChanges applies a given set of changes in a given zone.
 func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes) error {
 	if !changes.HasChanges() {
-		_ = level.Debug(p.logger).Log("msg", "no changes detected - nothing to do")
+		p.logger.Debug("no changes detected - nothing to do")
 		return nil
 	}
 
 	if p.dryRun {
-		_ = level.Debug(p.logger).Log("msg", "dry run - skipping login")
+		p.logger.Debug("dry run - skipping login")
 	} else {
 		err := p.ensureLogin()
 		if err != nil {
@@ -133,7 +132,7 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 	perZoneChanges := map[string]*plan.Changes{}
 
 	for _, zoneName := range p.domainFilter.Filters {
-		_ = level.Debug(p.logger).Log("msg", "zone detected", "zone", zoneName)
+		p.logger.Debug("zone detected", "zone", zoneName)
 
 		perZoneChanges[zoneName] = &plan.Changes{}
 	}
@@ -141,10 +140,10 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 	for _, ep := range changes.Create {
 		zoneName := endpointZoneName(ep, p.domainFilter.Filters)
 		if zoneName == "" {
-			_ = level.Debug(p.logger).Log("msg", "ignoring change since it did not match any zone", "type", "create", "endpoint", ep)
+			p.logger.Debug("ignoring change since it did not match any zone", "type", "create", "endpoint", ep)
 			continue
 		}
-		_ = level.Debug(p.logger).Log("msg", "planning", "type", "create", "endpoint", ep, "zone", zoneName)
+		p.logger.Debug("planning", "type", "create", "endpoint", ep, "zone", zoneName)
 
 		perZoneChanges[zoneName].Create = append(perZoneChanges[zoneName].Create, ep)
 	}
@@ -152,10 +151,10 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 	for _, ep := range changes.UpdateOld {
 		zoneName := endpointZoneName(ep, p.domainFilter.Filters)
 		if zoneName == "" {
-			_ = level.Debug(p.logger).Log("msg", "ignoring change since it did not match any zone", "type", "updateOld", "endpoint", ep)
+			p.logger.Debug("ignoring change since it did not match any zone", "type", "updateOld", "endpoint", ep)
 			continue
 		}
-		_ = level.Debug(p.logger).Log("msg", "planning", "type", "updateOld", "endpoint", ep, "zone", zoneName)
+		p.logger.Debug("planning", "type", "updateOld", "endpoint", ep, "zone", zoneName)
 
 		perZoneChanges[zoneName].UpdateOld = append(perZoneChanges[zoneName].UpdateOld, ep)
 	}
@@ -163,25 +162,25 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 	for _, ep := range changes.UpdateNew {
 		zoneName := endpointZoneName(ep, p.domainFilter.Filters)
 		if zoneName == "" {
-			_ = level.Debug(p.logger).Log("msg", "ignoring change since it did not match any zone", "type", "updateNew", "endpoint", ep)
+			p.logger.Debug("ignoring change since it did not match any zone", "type", "updateNew", "endpoint", ep)
 			continue
 		}
-		_ = level.Debug(p.logger).Log("msg", "planning", "type", "updateNew", "endpoint", ep, "zone", zoneName)
+		p.logger.Debug("planning", "type", "updateNew", "endpoint", ep, "zone", zoneName)
 		perZoneChanges[zoneName].UpdateNew = append(perZoneChanges[zoneName].UpdateNew, ep)
 	}
 
 	for _, ep := range changes.Delete {
 		zoneName := endpointZoneName(ep, p.domainFilter.Filters)
 		if zoneName == "" {
-			_ = level.Debug(p.logger).Log("msg", "ignoring change since it did not match any zone", "type", "delete", "endpoint", ep)
+			p.logger.Debug("ignoring change since it did not match any zone", "type", "delete", "endpoint", ep)
 			continue
 		}
-		_ = level.Debug(p.logger).Log("msg", "planning", "type", "delete", "endpoint", ep, "zone", zoneName)
+		p.logger.Debug("planning", "type", "delete", "endpoint", ep, "zone", zoneName)
 		perZoneChanges[zoneName].Delete = append(perZoneChanges[zoneName].Delete, ep)
 	}
 
 	if p.dryRun {
-		_ = level.Info(p.logger).Log("msg", "dry run - not applying changes")
+		p.logger.Info("dry run - not applying changes")
 		return nil
 	}
 
@@ -191,9 +190,9 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 		recs, err := p.session.InfoDnsRecords(zoneName)
 		if err != nil {
 			if p.session.LastResponse != nil && p.session.LastResponse.Status == string(nc.StatusError) && p.session.LastResponse.StatusCode == 5029 {
-				_ = level.Debug(p.logger).Log("msg", "no records exist", "zone", zoneName, "error", err)
+				p.logger.Debug("no records exist", "zone", zoneName, "error", err.Error())
 			} else {
-				_ = level.Error(p.logger).Log("msg", "unable to get DNS records for domain", "zone", zoneName, "error", err)
+				p.logger.Error("unable to get DNS records for domain", "zone", zoneName, "error", err.Error())
 			}
 		}
 		change := &NetcupChange{
@@ -222,7 +221,7 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 		}
 	}
 
-	_ = level.Debug(p.logger).Log("msg", "update completed")
+	p.logger.Debug("update completed")
 
 	return nil
 }
@@ -279,12 +278,12 @@ func endpointZoneName(endpoint *endpoint.Endpoint, zones []string) (zone string)
 
 // ensureLogin makes sure that we are logged in to Netcup API.
 func (p *NetcupProvider) ensureLogin() error {
-	_ = level.Debug(p.logger).Log("msg", "performing login to Netcup DNS API")
+	p.logger.Debug("performing login to Netcup DNS API")
 	session, err := p.client.Login()
 	if err != nil {
 		return err
 	}
 	p.session = session
-	_ = level.Debug(p.logger).Log("msg", "successfully logged in to Netcup DNS API")
+	p.logger.Debug("successfully logged in to Netcup DNS API")
 	return nil
 }

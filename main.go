@@ -2,28 +2,27 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	netcup "github.com/mrueg/external-dns-netcup-webhook/provider"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	cversion "github.com/prometheus/client_golang/prometheus/collectors/version"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/common/promslog/flag"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/exporter-toolkit/web"
 	webhook "sigs.k8s.io/external-dns/provider/webhook/api"
 )
 
 var (
-	logFormat         = kingpin.Flag("log-format", "The format in which log messages are printed (default: text, options: logfmt, json)").Default("logfmt").Envar("NETCUP_LOG_FORMAT").String()
-	logLevel          = kingpin.Flag("log-level", "Set the level of logging. (default: info, options: panic, debug, info, warning, error, fatal)").Default("info").Envar("NETCUP_LOG_LEVEL").String()
 	listenAddr        = kingpin.Flag("listen-address", "The address this plugin listens on").Default(":8888").Envar("NETCUP_LISTEN_ADDRESS").String()
 	metricsListenAddr = kingpin.Flag("metrics-listen-address", "The address this plugin provides metrics on").Default(":8889").Envar("NETCUP_METRICS_LISTEN_ADDRESS").String()
 	tlsConfig         = kingpin.Flag("tls-config", "Path to TLS config file.").Envar("NETCUP_TLS_CONFIG").Default("").String()
@@ -37,23 +36,14 @@ var (
 
 func main() {
 
+	promslogConfig := &promslog.Config{}
+	flag.AddFlags(kingpin.CommandLine, promslogConfig)
 	kingpin.Version(version.Info())
 	kingpin.Parse()
 
-	var logger log.Logger
-	switch *logFormat {
-	case "json":
-		logger = log.NewJSONLogger(log.NewSyncWriter(os.Stderr))
-	case "logfmt":
-		logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	default:
-		fmt.Printf("Error: Unknown log format: %s\n", *logFormat)
-		os.Exit(1)
-	}
-	logger = level.NewFilter(logger, level.Allow(level.ParseDefault(*logLevel, level.InfoValue())))
-	logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
-	_ = level.Info(logger).Log("msg", "starting external-dns Netcup webhook plugin", "version", version.Version, "revision", version.Revision)
-	_ = level.Debug(logger).Log("customer-id", *customerID, "api-key", strings.Repeat("*", len(*apiKey)), "api-password", strings.Repeat("*", len(*apiPassword)))
+	var logger *slog.Logger = promslog.New(promslogConfig)
+	logger.Info("starting external-dns Netcup webhook plugin", "version", version.Version, "revision", version.Revision)
+	logger.Debug("configuration", "customer-id", strconv.Itoa(*customerID), "api-key", strings.Repeat("*", len(*apiKey)), "api-password", strings.Repeat("*", len(*apiPassword)))
 
 	prometheus.DefaultRegisterer.MustRegister(cversion.NewCollector("external_dns_netcup"))
 
@@ -70,7 +60,7 @@ func main() {
 
 	webhookMux, err := buildWebhookServer(logger)
 	if err != nil {
-		_ = level.Error(logger).Log("msg", "Failed to create provider", "error", err)
+		logger.Error("Failed to create provider", "error", err.Error())
 		os.Exit(1)
 	}
 	webhookServer := http.Server{
@@ -88,7 +78,7 @@ func main() {
 	// Run Metrics server
 	{
 		g.Add(func() error {
-			_ = level.Info(logger).Log("msg", "Started external-dns-netcup-webhook metrics server", "address", metricsListenAddr)
+			logger.Info("Started external-dns-netcup-webhook metrics server", "address", metricsListenAddr)
 			return web.ListenAndServe(&metricsServer, &metricsFlags, logger)
 		}, func(error) {
 			ctxShutDown, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -99,7 +89,7 @@ func main() {
 	// Run webhook API server
 	{
 		g.Add(func() error {
-			_ = level.Info(logger).Log("msg", "Started external-dns-netcup-webhook webhook server", "address", listenAddr)
+			logger.Info("Started external-dns-netcup-webhook webhook server", "address", listenAddr)
 			return web.ListenAndServe(&webhookServer, &webhookFlags, logger)
 		}, func(error) {
 			ctxShutDown, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -109,13 +99,13 @@ func main() {
 	}
 
 	if err := g.Run(); err != nil {
-		_ = level.Error(logger).Log("msg", "run server group error", "error", err)
+		logger.Error("run server group error", "error", err.Error())
 		os.Exit(1)
 	}
 
 }
 
-func buildMetricsServer(registry prometheus.Gatherer, logger log.Logger) *http.ServeMux {
+func buildMetricsServer(registry prometheus.Gatherer, logger *slog.Logger) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	var metricsPath = "/metrics"
@@ -142,17 +132,17 @@ func buildMetricsServer(registry prometheus.Gatherer, logger log.Logger) *http.S
 	}
 	landingPage, err := web.NewLandingPage(landingConfig)
 	if err != nil {
-		_ = level.Error(logger).Log("msg", "failed to create landing page", "error", err)
+		logger.Error("failed to create landing page", "error", err.Error())
 	}
 	mux.Handle(rootPath, landingPage)
 
 	return mux
 }
 
-func buildWebhookServer(logger log.Logger) (*http.ServeMux, error) {
+func buildWebhookServer(logger *slog.Logger) (*http.ServeMux, error) {
 	mux := http.NewServeMux()
 
-        var rootPath = "/"
+	var rootPath = "/"
 	var healthzPath = "/healthz"
 	var recordsPath = "/records"
 	var adjustEndpointsPath = "/adjustendpoints"

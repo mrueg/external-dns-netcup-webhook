@@ -1,16 +1,17 @@
 module github.com/mrueg/external-dns-netcup-webhook
 
-go 1.22.2
-toolchain go1.23.0
+go 1.23
+
+toolchain go1.23.1
 
 require (
 	github.com/aellwein/netcup-dns-api v1.0.5
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/go-kit/log v0.2.1
 	github.com/oklog/run v1.1.0
-	github.com/prometheus/client_golang v1.20.3
+	github.com/prometheus/client_golang v1.20.4
 	github.com/prometheus/common v0.59.1
-	github.com/prometheus/exporter-toolkit v0.12.0
+	github.com/prometheus/exporter-toolkit v0.13.0
 	github.com/stretchr/testify v1.9.0
 	sigs.k8s.io/external-dns v0.15.0
 )
