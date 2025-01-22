@@ -98,7 +98,6 @@ spec:
         image: ghcr.io/mrueg/external-dns-netcup-webhook:latest
         imagePullPolicy: Always
         args:
-        - --log-level=debug
         - --domain-filter=YOUR_DOMAIN
         - --netcup-customer-id=YOUR_ID
         env:
