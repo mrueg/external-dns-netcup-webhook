@@ -41,7 +41,7 @@ func main() {
 	kingpin.Version(version.Info())
 	kingpin.Parse()
 
-	var logger *slog.Logger = promslog.New(promslogConfig)
+	var logger = promslog.New(promslogConfig)
 	logger.Info("starting external-dns Netcup webhook plugin", "version", version.Version, "revision", version.Revision)
 	logger.Debug("configuration", "customer-id", strconv.Itoa(*customerID), "api-key", strings.Repeat("*", len(*apiKey)), "api-password", strings.Repeat("*", len(*apiPassword)))
 

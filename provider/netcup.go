@@ -267,7 +267,7 @@ func getIDforRecord(recordName string, target string, recordType string, recs *[
 // endpointZoneName determines zoneName for endpoint by taking longest suffix zoneName match in endpoint DNSName
 // returns empty string if no match found
 func endpointZoneName(endpoint *endpoint.Endpoint, zones []string) (zone string) {
-	var matchZoneName string = ""
+	var matchZoneName = ""
 	for _, zoneName := range zones {
 		if strings.HasSuffix(endpoint.DNSName, zoneName) && len(zoneName) > len(matchZoneName) {
 			matchZoneName = zoneName
