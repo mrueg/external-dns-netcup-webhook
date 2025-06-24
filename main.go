@@ -23,8 +23,10 @@ import (
 )
 
 var (
-	listenAddr        = kingpin.Flag("listen-address", "The address this plugin listens on").Default(":8888").Envar("NETCUP_LISTEN_ADDRESS").String()
-	metricsListenAddr = kingpin.Flag("metrics-listen-address", "The address this plugin provides metrics on").Default(":8889").Envar("NETCUP_METRICS_LISTEN_ADDRESS").String()
+	// The default recommended port for the provider endpoints is 8888, and should listen only on localhost (ie: only accessible for external-dns).
+	listenAddr = kingpin.Flag("listen-address", "The address this plugin listens on").Default("127.0.0.1:8888").Envar("NETCUP_LISTEN_ADDRESS").String()
+	// The default recommended port for the exposed endpoints is 8080, and it should be bound to all interfaces (0.0.0.0)
+	metricsListenAddr = kingpin.Flag("metrics-listen-address", "The address this plugin provides metrics on").Default(":8080").Envar("NETCUP_METRICS_LISTEN_ADDRESS").String()
 	tlsConfig         = kingpin.Flag("tls-config", "Path to TLS config file.").Envar("NETCUP_TLS_CONFIG").Default("").String()
 
 	domainFilter = kingpin.Flag("domain-filter", "Limit possible target zones by a domain suffix; specify multiple times for multiple domains").Required().Envar("NETCUP_DOMAIN_FILTER").Strings()
@@ -98,7 +100,7 @@ func main() {
 		})
 	}
 
-	if err := g.Run(); err != nil {
+	if err = g.Run(); err != nil {
 		logger.Error("run server group error", "error", err.Error())
 		os.Exit(1)
 	}
@@ -108,8 +110,17 @@ func main() {
 func buildMetricsServer(registry prometheus.Gatherer, logger *slog.Logger) *http.ServeMux {
 	mux := http.NewServeMux()
 
+	var healthzPath = "/healthz"
 	var metricsPath = "/metrics"
 	var rootPath = "/"
+
+	// Add the exposed "/healthz" endpoint that is used by liveness and readiness probes.
+	// References:
+	//   1. https://kubernetes-sigs.github.io/external-dns/v0.17.0/docs/tutorials/webhook-provider/#implementation-requirements
+	mux.HandleFunc(healthzPath, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(http.StatusText(http.StatusOK)))
+	})
 
 	// Add metricsPath
 	mux.Handle(metricsPath, promhttp.HandlerFor(
@@ -143,7 +154,6 @@ func buildWebhookServer(logger *slog.Logger) (*http.ServeMux, error) {
 	mux := http.NewServeMux()
 
 	var rootPath = "/"
-	var healthzPath = "/healthz"
 	var recordsPath = "/records"
 	var adjustEndpointsPath = "/adjustendpoints"
 
@@ -156,11 +166,8 @@ func buildWebhookServer(logger *slog.Logger) (*http.ServeMux, error) {
 		Provider: ncProvider,
 	}
 
-	// Add healthzPath
-	mux.HandleFunc(healthzPath, func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(http.StatusText(http.StatusOK)))
-	})
+	// Inform users of the breaking change of moving the healthz endpoint to the metrics server while the webhook is in major version 0.
+	logger.Warn("The /healthz endpoint has ben moved to the metrics endpoints, please adjust your liveness/readiness probes accordingly")
 
 	// Add negotiatePath
 	mux.HandleFunc(rootPath, p.NegotiateHandler)
