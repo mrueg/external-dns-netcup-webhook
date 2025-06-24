@@ -88,7 +88,7 @@ spec:
       serviceAccountName: external-dns
       containers:
       - name: external-dns
-        image: registry.k8s.io/external-dns/external-dns:v0.14.0
+        image: registry.k8s.io/external-dns/external-dns:v0.17.0
         args:
         - --log-level=debug
         - --source=ingress
@@ -112,6 +112,29 @@ spec:
             secretKeyRef:
               key: NETCUP_API_PASSWORD
               name: netcup-api-password
+        ports:
+          - containerPort: 8080
+            name: http-webhook
+        livenessProbe:
+          failureThreshold: 2
+          httpGet:
+            path: /healthz
+            port: http-webhook
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        readinessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: /healthz
+            port: http-webhook
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
 
 ```
 
