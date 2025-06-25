@@ -166,9 +166,6 @@ func buildWebhookServer(logger *slog.Logger) (*http.ServeMux, error) {
 		Provider: ncProvider,
 	}
 
-	// Inform users of the breaking change of moving the healthz endpoint to the metrics server while the webhook is in major version 0.
-	logger.Warn("The /healthz endpoint has ben moved to the metrics endpoints, please adjust your liveness/readiness probes accordingly")
-
 	// Add negotiatePath
 	mux.HandleFunc(rootPath, p.NegotiateHandler)
 	// Add adjustEndpointsPath
