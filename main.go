@@ -24,7 +24,7 @@ import (
 
 var (
 	// The default recommended port for the provider endpoints is 8888, and should listen only on localhost (ie: only accessible for external-dns).
-	listenAddr = kingpin.Flag("listen-address", "The address this plugin listens on").Default("127.0.0.1:8888").Envar("NETCUP_LISTEN_ADDRESS").String()
+	listenAddr = kingpin.Flag("listen-address", "The address this plugin listens on").Default("localhost:8888").Envar("NETCUP_LISTEN_ADDRESS").String()
 	// The default recommended port for the exposed endpoints is 8080, and it should be bound to all interfaces (0.0.0.0)
 	metricsListenAddr = kingpin.Flag("metrics-listen-address", "The address this plugin provides metrics on").Default(":8080").Envar("NETCUP_METRICS_LISTEN_ADDRESS").String()
 	tlsConfig         = kingpin.Flag("tls-config", "Path to TLS config file.").Envar("NETCUP_TLS_CONFIG").Default("").String()
