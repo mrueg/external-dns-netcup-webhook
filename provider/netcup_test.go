@@ -29,7 +29,6 @@ import (
 )
 
 func TestNetcupProvider(t *testing.T) {
-	t.Run("EndpointZoneName", testEndpointZoneName)
 	t.Run("GetIDforRecord", testGetIDforRecord)
 	t.Run("ConvertToNetcupRecord", testConvertToNetcupRecord)
 	t.Run("ConvertToNetcupRecordMultiTarget", testConvertToNetcupRecordMultiTarget)
@@ -37,37 +36,10 @@ func TestNetcupProvider(t *testing.T) {
 	t.Run("TxtRecordRestartScenario", testTxtRecordRestartScenario)
 	t.Run("NewNetcupProvider", testNewNetcupProvider)
 	t.Run("ApplyChanges", testApplyChanges)
+	t.Run("ApplyChangesPerZoneCollection", testApplyChangesPerZoneCollection)
 	t.Run("Records", testRecords)
 	t.Run("RecordsGrouping", testRecordsGrouping)
-}
-
-func testEndpointZoneName(t *testing.T) {
-	zoneList := []string{"bar.org", "baz.org"}
-
-	// in zone list
-	ep1 := endpoint.Endpoint{
-		DNSName:    "foo.bar.org",
-		Targets:    endpoint.Targets{"5.5.5.5"},
-		RecordType: endpoint.RecordTypeA,
-	}
-
-	// not in zone list
-	ep2 := endpoint.Endpoint{
-		DNSName:    "foo.foo.org",
-		Targets:    endpoint.Targets{"5.5.5.5"},
-		RecordType: endpoint.RecordTypeA,
-	}
-
-	// matches zone exactly
-	ep3 := endpoint.Endpoint{
-		DNSName:    "baz.org",
-		Targets:    endpoint.Targets{"5.5.5.5"},
-		RecordType: endpoint.RecordTypeA,
-	}
-
-	assert.Equal(t, endpointZoneName(&ep1, zoneList), "bar.org")
-	assert.Equal(t, endpointZoneName(&ep2, zoneList), "")
-	assert.Equal(t, endpointZoneName(&ep3, zoneList), "baz.org")
+	t.Run("ToPunycode", testToPunycode)
 }
 
 func testGetIDforRecord(t *testing.T) {
@@ -594,6 +566,36 @@ func testApplyChanges(t *testing.T) {
 
 }
 
+func testApplyChangesPerZoneCollection(t *testing.T) {
+	domainFilter := []string{"example.com"}
+	var logger *slog.Logger
+	promslogConfig := &promslog.Config{}
+	logger = promslog.New(promslogConfig)
+
+	p, _ := NewNetcupProvider(&domainFilter, 10, "KEY", "PASSWORD", true, logger)
+
+	// Create a plan with changes for the configured domain
+	changes := &plan.Changes{
+		Create: []*endpoint.Endpoint{
+			{DNSName: "api.example.com", RecordType: "A", Targets: endpoint.Targets{"1.1.1.1"}},
+			{DNSName: "test.example.com", RecordType: "TXT", Targets: endpoint.Targets{"\"heritage=external-dns,external-dns/owner=default,external-dns/resource=service/default/nginx\""}},
+		},
+		Delete: []*endpoint.Endpoint{
+			{DNSName: "old.example.com", RecordType: "A", Targets: endpoint.Targets{"2.2.2.2"}},
+		},
+		UpdateNew: []*endpoint.Endpoint{
+			{DNSName: "api.example.com", RecordType: "A", Targets: endpoint.Targets{"3.3.3.3"}},
+		},
+		UpdateOld: []*endpoint.Endpoint{
+			{DNSName: "api.example.com", RecordType: "A", Targets: endpoint.Targets{"1.1.1.1"}},
+		},
+	}
+
+	// Apply changes - this should work without errors now that perZoneChanges collection is fixed
+	err := p.ApplyChanges(context.TODO(), changes)
+	assert.NoError(t, err)
+}
+
 func testRecords(t *testing.T) {
 	domainFilter := []string{"example.com"}
 	var logger *slog.Logger
@@ -813,4 +815,52 @@ func findEndpoint(endpoints []*endpoint.Endpoint, dnsName, recordType string) *e
 		}
 	}
 	return nil
+}
+
+func testToPunycode(t *testing.T) {
+	// Test cases for punycode conversion
+	testCases := []struct {
+		input    string
+		expected string
+		hasError bool
+	}{
+		{
+			input:    "example.com",
+			expected: "example.com",
+			hasError: false,
+		},
+		{
+			input:    "müller.de",
+			expected: "xn--mller-kva.de",
+			hasError: false,
+		},
+		{
+			input:    "bücher.de",
+			expected: "xn--bcher-kva.de",
+			hasError: false,
+		},
+		{
+			input:    "café.com",
+			expected: "xn--caf-dma.com",
+			hasError: false,
+		},
+		{
+			input:    "test.example.com",
+			expected: "test.example.com",
+			hasError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.input, func(t *testing.T) {
+			result, err := toPunycode(tc.input)
+
+			if tc.hasError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.expected, result)
+			}
+		})
+	}
 }
