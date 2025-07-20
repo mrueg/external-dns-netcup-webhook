@@ -56,7 +56,7 @@ func NewNetcupProvider(domainFilterList *[]string, customerID int, apiKey string
 
 	return &NetcupProvider{
 		client:       client,
-		domainFilter: domainFilter,
+		domainFilter: *domainFilter,
 		dryRun:       dryRun,
 		logger:       logger,
 	}, nil
@@ -96,13 +96,36 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 				}
 			}
 			p.logger.Info("got DNS records for domain", "domain", domain)
+
+			// Group records by Type and Hostname
+			recordGroups := make(map[string][]string)
 			for _, rec := range *recs {
-				name := fmt.Sprintf("%s.%s", rec.Hostname, domain)
-				if rec.Hostname == "@" {
+				key := fmt.Sprintf("%s:%s", rec.Type, rec.Hostname)
+				destination := rec.Destination
+				if rec.Type == "TXT" && !strings.HasPrefix(rec.Destination, "\"") {
+					destination = fmt.Sprintf("\"%s\"", rec.Destination)
+				}
+				recordGroups[key] = append(recordGroups[key], destination)
+			}
+
+			// Create endpoints with multiple destinations
+			for key, destinations := range recordGroups {
+				parts := strings.SplitN(key, ":", 2)
+				if len(parts) != 2 {
+					p.logger.Warn("invalid record key format", "key", key)
+					continue
+				}
+
+				recordType := parts[0]
+				hostname := parts[1]
+
+				name := fmt.Sprintf("%s.%s", hostname, domain)
+				if hostname == "@" {
 					name = domain
 				}
 
-				ep := endpoint.NewEndpointWithTTL(name, rec.Type, endpoint.TTL(ttl), rec.Destination)
+				// Create endpoint with all destinations
+				ep := endpoint.NewEndpointWithTTL(name, recordType, endpoint.TTL(ttl), destinations...)
 				endpoints = append(endpoints, ep)
 			}
 		}
@@ -229,34 +252,55 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 // convertToNetcupRecord transforms a list of endpoints into a list of Netcup DNS Records
 // returns a pointer to a list of DNS Records
 func convertToNetcupRecord(recs *[]nc.DnsRecord, endpoints []*endpoint.Endpoint, zoneName string, DeleteRecord bool) *[]nc.DnsRecord {
-	records := make([]nc.DnsRecord, len(endpoints))
+	// Calculate total number of records needed (one per target per endpoint)
+	totalRecords := 0
+	for _, ep := range endpoints {
+		totalRecords += len(ep.Targets)
+	}
 
-	for i, ep := range endpoints {
+	records := make([]nc.DnsRecord, 0)
+
+	for _, ep := range endpoints {
 		recordName := strings.TrimSuffix(ep.DNSName, "."+zoneName)
 		if recordName == zoneName {
 			recordName = "@"
 		}
-		target := ep.Targets[0]
-		if ep.RecordType == endpoint.RecordTypeTXT && strings.HasPrefix(target, "\"heritage=") {
-			target = strings.Trim(ep.Targets[0], "\"")
-		}
 
-		records[i] = nc.DnsRecord{
-			Type:         ep.RecordType,
-			Hostname:     recordName,
-			Destination:  target,
-			Id:           getIDforRecord(recordName, target, ep.RecordType, recs),
-			DeleteRecord: DeleteRecord,
+		// Create a separate record for each target
+		for _, target := range ep.Targets {
+			id := ""
+
+			if DeleteRecord {
+				id = getIDforRecord(recordName, target, ep.RecordType, recs)
+
+				if id == "" {
+					continue
+				}
+			}
+
+			record := nc.DnsRecord{
+				Type:         ep.RecordType,
+				Hostname:     recordName,
+				Destination:  strings.Trim(target, "\""),
+				Id:           id,
+				DeleteRecord: DeleteRecord,
+			}
+			records = append(records, record)
 		}
 	}
+
 	return &records
 }
 
 // getIDforRecord compares the endpoint with existing records to get the ID from Netcup to ensure it can be safely removed.
 // returns empty string if no match found
 func getIDforRecord(recordName string, target string, recordType string, recs *[]nc.DnsRecord) string {
+	targetToCompare := strings.Trim(target, "\"")
 	for _, rec := range *recs {
-		if recordType == rec.Type && target == rec.Destination && rec.Hostname == recordName {
+		recDestinationToCompare := strings.Trim(rec.Destination, "\"")
+
+		// Check if this record matches
+		if recordType == rec.Type && targetToCompare == recDestinationToCompare && rec.Hostname == recordName {
 			return rec.Id
 		}
 	}
