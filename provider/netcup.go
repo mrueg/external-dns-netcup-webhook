@@ -19,7 +19,7 @@ type NetcupProvider struct {
 	provider.BaseProvider
 	client       *nc.NetcupDnsClient
 	session      *nc.NetcupSession
-	domainFilter endpoint.DomainFilter
+	domainFilter *endpoint.DomainFilter
 	dryRun       bool
 	logger       *slog.Logger
 }
