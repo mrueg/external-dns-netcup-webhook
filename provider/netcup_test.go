@@ -129,20 +129,27 @@ func testConvertToNetcupRecord(t *testing.T) {
 		RecordType: endpoint.RecordTypeTXT,
 	}
 
-	epList := []*endpoint.Endpoint{&ep1, &ep2, &ep3, &ep4}
+	ep5 := endpoint.Endpoint{
+		DNSName:       "baz.org",
+		Targets:       endpoint.Targets{"mail.baz.org"},
+		RecordType:    endpoint.RecordTypeMX,
+		SetIdentifier: "10",
+	}
+
+	epList := []*endpoint.Endpoint{&ep1, &ep2, &ep3, &ep4, &ep5}
 
 	nc1 := nc.DnsRecord{
+		Id:           "10",
 		Hostname:     "foo",
 		Type:         "A",
 		Destination:  "5.5.5.5",
-		Id:           "10",
 		DeleteRecord: false,
 	}
 	nc2 := nc.DnsRecord{
+		Id:           "15",
 		Hostname:     "foo.foo.org",
 		Type:         "A",
 		Destination:  "5.5.5.5",
-		Id:           "15",
 		DeleteRecord: false,
 	}
 
@@ -162,7 +169,15 @@ func testConvertToNetcupRecord(t *testing.T) {
 		DeleteRecord: false,
 	}
 
-	ncRecordList := []nc.DnsRecord{nc1, nc2, nc3, nc4}
+	nc5 := nc.DnsRecord{
+		Hostname:     "baz.org",
+		Type:         "MX",
+		Priority:     "10",
+		Destination:  "mail.baz.org",
+		DeleteRecord: false,
+	}
+
+	ncRecordList := []nc.DnsRecord{nc1, nc2, nc3, nc4, nc5}
 
 	// No deletion
 	assert.Equal(t, convertToNetcupRecord(&ncRecordList, epList, "bar.org", false), &ncRecordList)
@@ -172,7 +187,8 @@ func testConvertToNetcupRecord(t *testing.T) {
 	nc2.DeleteRecord = true
 	nc3.DeleteRecord = true
 	nc4.DeleteRecord = true
-	ncRecordList2 := []nc.DnsRecord{nc1, nc2, nc3, nc4}
+	nc5.DeleteRecord = true
+	ncRecordList2 := []nc.DnsRecord{nc1, nc2, nc3, nc4, nc5}
 	assert.Equal(t, convertToNetcupRecord(&ncRecordList2, epList, "bar.org", true), &ncRecordList2)
 
 }
