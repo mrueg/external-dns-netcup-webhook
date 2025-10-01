@@ -130,10 +130,9 @@ func testConvertToNetcupRecord(t *testing.T) {
 	}
 
 	ep5 := endpoint.Endpoint{
-		DNSName:       "baz.org",
-		Targets:       endpoint.Targets{"mail.baz.org"},
-		RecordType:    endpoint.RecordTypeMX,
-		SetIdentifier: "10",
+		DNSName:    "baz.org",
+		Targets:    endpoint.Targets{"10 mail.baz.org"},
+		RecordType: endpoint.RecordTypeMX,
 	}
 
 	epList := []*endpoint.Endpoint{&ep1, &ep2, &ep3, &ep4, &ep5}
