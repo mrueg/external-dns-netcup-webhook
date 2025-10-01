@@ -242,10 +242,11 @@ func convertToNetcupRecord(recs *[]nc.DnsRecord, endpoints []*endpoint.Endpoint,
 		}
 
 		records[i] = nc.DnsRecord{
-			Type:         ep.RecordType,
-			Hostname:     recordName,
-			Destination:  target,
 			Id:           getIDforRecord(recordName, target, ep.RecordType, recs),
+			Hostname:     recordName,
+			Type:         ep.RecordType,
+			Priority:     ep.SetIdentifier,
+			Destination:  target,
 			DeleteRecord: DeleteRecord,
 		}
 	}
