@@ -102,7 +102,13 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 					name = domain
 				}
 
-				ep := endpoint.NewEndpointWithTTL(name, rec.Type, endpoint.TTL(ttl), rec.Destination)
+				dest := rec.Destination
+				if rec.Type == endpoint.RecordTypeMX {
+					// MX record format is: "10 mail.foo.bar"
+					dest = fmt.Sprintf("%s %s", rec.Priority, dest)
+				}
+
+				ep := endpoint.NewEndpointWithTTL(name, rec.Type, endpoint.TTL(ttl), dest)
 				endpoints = append(endpoints, ep)
 			}
 		}
@@ -240,12 +246,25 @@ func convertToNetcupRecord(recs *[]nc.DnsRecord, endpoints []*endpoint.Endpoint,
 		if ep.RecordType == endpoint.RecordTypeTXT && strings.HasPrefix(target, "\"heritage=") {
 			target = strings.Trim(ep.Targets[0], "\"")
 		}
+		priority := ""
+		if ep.RecordType == endpoint.RecordTypeMX {
+			// MX record target includes priority: "10 mail.foo.bar"
+			// FIXME: this ignores all errors, i.e. only applies if the format matches
+			parts := strings.Fields(strings.TrimSpace(target))
+			if len(parts) == 2 {
+				_, err := strconv.ParseUint(parts[0], 10, 16)
+				if err == nil {
+					priority = parts[0]
+					target = parts[1]
+				}
+			}
+		}
 
 		records[i] = nc.DnsRecord{
 			Id:           getIDforRecord(recordName, target, ep.RecordType, recs),
 			Hostname:     recordName,
 			Type:         ep.RecordType,
-			Priority:     ep.SetIdentifier,
+			Priority:     priority,
 			Destination:  target,
 			DeleteRecord: DeleteRecord,
 		}
