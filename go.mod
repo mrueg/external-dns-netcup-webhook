@@ -7,7 +7,7 @@ require (
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/oklog/run v1.2.0
 	github.com/prometheus/client_golang v1.23.2
-	github.com/prometheus/common v0.67.2
+	github.com/prometheus/common v0.67.4
 	github.com/prometheus/exporter-toolkit v0.15.0
 	github.com/stretchr/testify v1.11.1
 	sigs.k8s.io/external-dns v0.20.0
@@ -29,6 +29,7 @@ require (
 	github.com/go-openapi/jsonreference v0.21.0 // indirect
 	github.com/go-openapi/swag v0.23.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
