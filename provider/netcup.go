@@ -67,7 +67,7 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 	endpoints := make([]*endpoint.Endpoint, 0)
 
 	if p.dryRun {
-		p.logger.Debug("dry run - skipping login")
+		p.logger.DebugContext(ctx, "dry run - skipping login")
 	} else {
 		err := p.ensureLogin()
 		if err != nil {
@@ -80,23 +80,29 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 			// some information is on DNS zone itself, query it first
 			zone, err := p.session.InfoDnsZone(domain)
 			if err != nil {
-				return nil, fmt.Errorf("unable to query DNS zone info for domain '%v': %v", domain, err)
+				p.logger.ErrorContext(ctx, "unable to query DNS zone info for domain", "domain", domain, "error", err.Error())
+				continue
+				//return nil, fmt.Errorf("unable to query DNS zone info for domain '%v': %v", domain, err)
 			}
 			ttl, err := strconv.ParseUint(zone.Ttl, 10, 64)
 			if err != nil {
-				return nil, fmt.Errorf("unexpected error: unable to convert '%s' to uint64", zone.Ttl)
+				p.logger.ErrorContext(ctx, "unable to parse TTL for domain", "domain", domain, "error", err.Error())
+				continue
+				//return nil, fmt.Errorf("unexpected error: unable to convert '%s' to uint64", zone.Ttl)
 			}
 			// query the records of the domain
 			recs, err := p.session.InfoDnsRecords(domain)
 			if err != nil {
 				if p.session.LastResponse != nil && p.session.LastResponse.Status == string(nc.StatusError) && p.session.LastResponse.StatusCode == 5029 {
-					p.logger.Info("no records exist", "domain", domain, "error", err.Error())
+					p.logger.InfoContext(ctx, "no records exist", "domain", domain, "error", err.Error())
 					continue
 				} else {
-					return nil, fmt.Errorf("unable to get DNS records for domain '%v': %v", domain, err)
+					p.logger.ErrorContext(ctx, "unable to get DNS records for domain", "domain", domain, "error", err.Error())
+					continue
+					//return nil, fmt.Errorf("unable to get DNS records for domain '%v': %v", domain, err)
 				}
 			}
-			p.logger.Info("got DNS records for domain", "domain", domain)
+			p.logger.InfoContext(ctx, "got DNS records for domain", "domain", domain)
 
 			// TODO: move this into a separate function, so it can be covered in tests
 			for _, rec := range *recs {
@@ -109,7 +115,7 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 				// external-dns supports multiple targets, netcup does not
 				if rec.Type == endpoint.RecordTypeA || rec.Type == endpoint.RecordTypeAAAA {
 					if appendToExistingEndpoint(endpoints, name, rec) {
-						p.logger.Debug("added to existing Endpoint", "rec", rec)
+						p.logger.DebugContext(ctx, "added to existing Endpoint", "rec", rec)
 						continue
 					}
 				}
@@ -122,7 +128,7 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 
 				ep := endpoint.NewEndpointWithTTL(name, rec.Type, endpoint.TTL(ttl), dest)
 				endpoints = append(endpoints, ep)
-				p.logger.Debug("add endpoint", "endpoint", ep.String(), "id", rec.Id)
+				p.logger.DebugContext(ctx, "add endpoint", "endpoint", ep.String(), "id", rec.Id)
 			}
 		}
 	}
@@ -132,12 +138,12 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 // ApplyChanges applies a given set of changes in a given zone.
 func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes) error {
 	if !changes.HasChanges() {
-		p.logger.Debug("no changes detected - nothing to do")
+		p.logger.DebugContext(ctx, "no changes detected - nothing to do")
 		return nil
 	}
 
 	if p.dryRun {
-		p.logger.Debug("dry run - skipping login")
+		p.logger.DebugContext(ctx, "dry run - skipping login")
 	} else {
 		err := p.ensureLogin()
 		if err != nil {
@@ -148,7 +154,7 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 	perZoneChanges := map[string]*plan.Changes{}
 
 	for _, zoneName := range p.domainFilter.Filters {
-		p.logger.Debug("zone detected", "zone", zoneName)
+		p.logger.DebugContext(ctx, "zone detected", "zone", zoneName)
 
 		perZoneChanges[zoneName] = &plan.Changes{}
 	}
@@ -156,10 +162,10 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 	for _, ep := range changes.Create {
 		zoneName := endpointZoneName(ep, p.domainFilter.Filters)
 		if zoneName == "" {
-			p.logger.Debug("ignoring change since it did not match any zone", "type", "create", "endpoint", ep)
+			p.logger.DebugContext(ctx, "ignoring change since it did not match any zone", "type", "create", "endpoint", ep)
 			continue
 		}
-		p.logger.Debug("planning", "type", "create", "endpoint", ep, "zone", zoneName)
+		p.logger.DebugContext(ctx, "planning", "type", "create", "endpoint", ep, "zone", zoneName)
 
 		perZoneChanges[zoneName].Create = append(perZoneChanges[zoneName].Create, ep)
 	}
@@ -167,10 +173,10 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 	for _, ep := range changes.UpdateOld {
 		zoneName := endpointZoneName(ep, p.domainFilter.Filters)
 		if zoneName == "" {
-			p.logger.Debug("ignoring change since it did not match any zone", "type", "updateOld", "endpoint", ep)
+			p.logger.DebugContext(ctx, "ignoring change since it did not match any zone", "type", "updateOld", "endpoint", ep)
 			continue
 		}
-		p.logger.Debug("planning", "type", "updateOld", "endpoint", ep, "zone", zoneName)
+		p.logger.DebugContext(ctx, "planning", "type", "updateOld", "endpoint", ep, "zone", zoneName)
 
 		perZoneChanges[zoneName].UpdateOld = append(perZoneChanges[zoneName].UpdateOld, ep)
 	}
@@ -178,25 +184,25 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 	for _, ep := range changes.UpdateNew {
 		zoneName := endpointZoneName(ep, p.domainFilter.Filters)
 		if zoneName == "" {
-			p.logger.Debug("ignoring change since it did not match any zone", "type", "updateNew", "endpoint", ep)
+			p.logger.DebugContext(ctx, "ignoring change since it did not match any zone", "type", "updateNew", "endpoint", ep)
 			continue
 		}
-		p.logger.Debug("planning", "type", "updateNew", "endpoint", ep, "zone", zoneName)
+		p.logger.DebugContext(ctx, "planning", "type", "updateNew", "endpoint", ep, "zone", zoneName)
 		perZoneChanges[zoneName].UpdateNew = append(perZoneChanges[zoneName].UpdateNew, ep)
 	}
 
 	for _, ep := range changes.Delete {
 		zoneName := endpointZoneName(ep, p.domainFilter.Filters)
 		if zoneName == "" {
-			p.logger.Debug("ignoring change since it did not match any zone", "type", "delete", "endpoint", ep)
+			p.logger.DebugContext(ctx, "ignoring change since it did not match any zone", "type", "delete", "endpoint", ep)
 			continue
 		}
-		p.logger.Debug("planning", "type", "delete", "endpoint", ep, "zone", zoneName)
+		p.logger.DebugContext(ctx, "planning", "type", "delete", "endpoint", ep, "zone", zoneName)
 		perZoneChanges[zoneName].Delete = append(perZoneChanges[zoneName].Delete, ep)
 	}
 
 	if p.dryRun {
-		p.logger.Info("dry run - not applying changes")
+		p.logger.InfoContext(ctx, "dry run - not applying changes")
 		return nil
 	}
 
@@ -206,9 +212,11 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 		recs, err := p.session.InfoDnsRecords(zoneName)
 		if err != nil {
 			if p.session.LastResponse != nil && p.session.LastResponse.Status == string(nc.StatusError) && p.session.LastResponse.StatusCode == 5029 {
-				p.logger.Debug("no records exist", "zone", zoneName, "error", err.Error())
+				p.logger.InfoContext(ctx, "no records exist", "zone", zoneName, "error", err.Error())
+				continue
 			} else {
-				p.logger.Error("unable to get DNS records for domain", "zone", zoneName, "error", err.Error())
+				p.logger.ErrorContext(ctx, "unable to get DNS records for domain", "zone", zoneName, "error", err.Error())
+				continue
 			}
 		}
 		change := &NetcupChange{
@@ -220,29 +228,29 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 
 		// If not in dry run, apply changes
 		// we don't need to delete old records, we can just update
-		//p.logger.Debug(fmt.Sprintf("UpdateOld"), "zone", zoneName, "records", change.UpdateOld)
+		//p.logger.DebugContext(ctx, fmt.Sprintf("UpdateOld"), "zone", zoneName, "records", change.UpdateOld)
 		//_, err = p.session.UpdateDnsRecords(zoneName, change.UpdateOld)
 		//if err != nil {
 		//	return err
 		//}
-		p.logger.Debug("Delete", "zone", zoneName, "records", change.Delete)
+		p.logger.DebugContext(ctx, "Delete", "zone", zoneName, "records", change.Delete)
 		_, err = p.session.UpdateDnsRecords(zoneName, change.Delete)
 		if err != nil {
 			return err
 		}
-		p.logger.Debug("Create", "zone", zoneName, "records", change.Create)
+		p.logger.DebugContext(ctx, "Create", "zone", zoneName, "records", change.Create)
 		_, err = p.session.UpdateDnsRecords(zoneName, change.Create)
 		if err != nil {
 			return err
 		}
-		p.logger.Debug("UpdateNew", "zone", zoneName, "records", change.UpdateNew)
+		p.logger.DebugContext(ctx, "UpdateNew", "zone", zoneName, "records", change.UpdateNew)
 		_, err = p.session.UpdateDnsRecords(zoneName, change.UpdateNew)
 		if err != nil {
 			return err
 		}
 	}
 
-	p.logger.Debug("update completed")
+	p.logger.DebugContext(ctx, "update completed")
 
 	return nil
 }
