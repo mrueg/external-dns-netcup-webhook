@@ -90,16 +90,28 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 			recs, err := p.session.InfoDnsRecords(domain)
 			if err != nil {
 				if p.session.LastResponse != nil && p.session.LastResponse.Status == string(nc.StatusError) && p.session.LastResponse.StatusCode == 5029 {
-					p.logger.Debug("no records exist", "domain", domain, "error", err.Error())
+					p.logger.Info("no records exist", "domain", domain, "error", err.Error())
+					continue
 				} else {
 					return nil, fmt.Errorf("unable to get DNS records for domain '%v': %v", domain, err)
 				}
 			}
 			p.logger.Info("got DNS records for domain", "domain", domain)
+
+			// TODO: move this into a separate function, so it can be covered in tests
 			for _, rec := range *recs {
 				name := fmt.Sprintf("%s.%s", rec.Hostname, domain)
-				if rec.Hostname == "@" {
+				if rec.Hostname == "@" || rec.Hostname == "" {
 					name = domain
+				}
+
+				// join multiple A/AAAA records for the same name
+				// external-dns supports multiple targets, netcup does not
+				if rec.Type == endpoint.RecordTypeA || rec.Type == endpoint.RecordTypeAAAA {
+					if appendToExistingEndpoint(endpoints, name, rec) {
+						p.logger.Debug("added to existing Endpoint", "rec", rec)
+						continue
+					}
 				}
 
 				dest := rec.Destination
@@ -110,11 +122,9 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 
 				ep := endpoint.NewEndpointWithTTL(name, rec.Type, endpoint.TTL(ttl), dest)
 				endpoints = append(endpoints, ep)
+				p.logger.Debug("add endpoint", "endpoint", ep.String(), "id", rec.Id)
 			}
 		}
-	}
-	for _, endpointItem := range endpoints {
-		p.logger.Debug("endpoints collected", "endpoints", endpointItem.String())
 	}
 	return endpoints, nil
 }
@@ -209,18 +219,23 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 		}
 
 		// If not in dry run, apply changes
-		_, err = p.session.UpdateDnsRecords(zoneName, change.UpdateOld)
-		if err != nil {
-			return err
-		}
+		// we don't need to delete old records, we can just update
+		//p.logger.Debug(fmt.Sprintf("UpdateOld"), "zone", zoneName, "records", change.UpdateOld)
+		//_, err = p.session.UpdateDnsRecords(zoneName, change.UpdateOld)
+		//if err != nil {
+		//	return err
+		//}
+		p.logger.Debug("Delete", "zone", zoneName, "records", change.Delete)
 		_, err = p.session.UpdateDnsRecords(zoneName, change.Delete)
 		if err != nil {
 			return err
 		}
+		p.logger.Debug("Create", "zone", zoneName, "records", change.Create)
 		_, err = p.session.UpdateDnsRecords(zoneName, change.Create)
 		if err != nil {
 			return err
 		}
+		p.logger.Debug("UpdateNew", "zone", zoneName, "records", change.UpdateNew)
 		_, err = p.session.UpdateDnsRecords(zoneName, change.UpdateNew)
 		if err != nil {
 			return err
@@ -235,9 +250,8 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 // convertToNetcupRecord transforms a list of endpoints into a list of Netcup DNS Records
 // returns a pointer to a list of DNS Records
 func convertToNetcupRecord(recs *[]nc.DnsRecord, endpoints []*endpoint.Endpoint, zoneName string, DeleteRecord bool) *[]nc.DnsRecord {
-	records := make([]nc.DnsRecord, len(endpoints))
-
-	for i, ep := range endpoints {
+	records := []nc.DnsRecord{}
+	for _, ep := range endpoints {
 		recordName := strings.TrimSuffix(ep.DNSName, "."+zoneName)
 		if recordName == zoneName {
 			recordName = "@"
@@ -260,13 +274,27 @@ func convertToNetcupRecord(recs *[]nc.DnsRecord, endpoints []*endpoint.Endpoint,
 			}
 		}
 
-		records[i] = nc.DnsRecord{
+		records = append(records, nc.DnsRecord{
 			Id:           getIDforRecord(recordName, target, ep.RecordType, recs),
 			Hostname:     recordName,
 			Type:         ep.RecordType,
 			Priority:     priority,
 			Destination:  target,
 			DeleteRecord: DeleteRecord,
+		})
+
+		// split A/AAAA multiple targets into separate records, because nc.DnsRecord only supports one target
+		if ep.RecordType == endpoint.RecordTypeA || ep.RecordType == endpoint.RecordTypeAAAA {
+			for _, target := range ep.Targets[1:] {
+				records = append(records, nc.DnsRecord{
+					Id:           getIDforRecord(recordName, target, ep.RecordType, recs),
+					Hostname:     recordName,
+					Type:         ep.RecordType,
+					Priority:     priority,
+					Destination:  target,
+					DeleteRecord: DeleteRecord,
+				})
+			}
 		}
 	}
 	return &records
@@ -306,4 +334,15 @@ func (p *NetcupProvider) ensureLogin() error {
 	p.session = session
 	p.logger.Debug("successfully logged in to Netcup DNS API")
 	return nil
+}
+
+// appendToExistingEndpoint appends the destination of the given record to an existing record with same name and type
+func appendToExistingEndpoint(endpoints []*endpoint.Endpoint, name string, record nc.DnsRecord) bool {
+	for i, ep := range endpoints {
+		if ep.DNSName == name && ep.RecordType == record.Type {
+			endpoints[i].Targets = append(ep.Targets, record.Destination)
+			return true
+		}
+	}
+	return false
 }
