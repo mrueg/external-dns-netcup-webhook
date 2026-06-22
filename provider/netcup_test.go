@@ -119,7 +119,7 @@ func testConvertToNetcupRecord(t *testing.T) {
 	// matches zone exactly
 	ep3 := endpoint.Endpoint{
 		DNSName:    "bar.org",
-		Targets:    endpoint.Targets{"5.5.5.5"},
+		Targets:    endpoint.Targets{"5.5.5.5", "6.6.6.6"},
 		RecordType: endpoint.RecordTypeA,
 	}
 
@@ -151,7 +151,6 @@ func testConvertToNetcupRecord(t *testing.T) {
 		Destination:  "5.5.5.5",
 		DeleteRecord: false,
 	}
-
 	nc3 := nc.DnsRecord{
 		Id:           "",
 		Hostname:     "@",
@@ -159,7 +158,13 @@ func testConvertToNetcupRecord(t *testing.T) {
 		Destination:  "5.5.5.5",
 		DeleteRecord: false,
 	}
-
+	nc3_2 := nc.DnsRecord{
+		Id:           "",
+		Hostname:     "@",
+		Type:         "A",
+		Destination:  "6.6.6.6",
+		DeleteRecord: false,
+	}
 	nc4 := nc.DnsRecord{
 		Id:           "",
 		Hostname:     "foo.baz.org",
@@ -167,7 +172,6 @@ func testConvertToNetcupRecord(t *testing.T) {
 		Destination:  "heritage=external-dns,external-dns/owner=default,external-dns/resource=service/default/nginx",
 		DeleteRecord: false,
 	}
-
 	nc5 := nc.DnsRecord{
 		Hostname:     "baz.org",
 		Type:         "MX",
@@ -176,19 +180,20 @@ func testConvertToNetcupRecord(t *testing.T) {
 		DeleteRecord: false,
 	}
 
-	ncRecordList := []nc.DnsRecord{nc1, nc2, nc3, nc4, nc5}
+	ncRecordList := []nc.DnsRecord{nc1, nc2, nc3, nc3_2, nc4, nc5}
 
 	// No deletion
-	assert.Equal(t, convertToNetcupRecord(&ncRecordList, epList, "bar.org", false), &ncRecordList)
+	assert.Equal(t, &ncRecordList, convertToNetcupRecord(&ncRecordList, epList, "bar.org", false))
 	// Deletion active
 
 	nc1.DeleteRecord = true
 	nc2.DeleteRecord = true
 	nc3.DeleteRecord = true
+	nc3_2.DeleteRecord = true
 	nc4.DeleteRecord = true
 	nc5.DeleteRecord = true
-	ncRecordList2 := []nc.DnsRecord{nc1, nc2, nc3, nc4, nc5}
-	assert.Equal(t, convertToNetcupRecord(&ncRecordList2, epList, "bar.org", true), &ncRecordList2)
+	ncRecordList2 := []nc.DnsRecord{nc1, nc2, nc3, nc3_2, nc4, nc5}
+	assert.Equal(t, &ncRecordList2, convertToNetcupRecord(&ncRecordList2, epList, "bar.org", true))
 
 }
 
