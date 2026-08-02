@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	nc "github.com/aellwein/netcup-dns-api/pkg/v1"
+	"golang.org/x/net/idna"
 
 	"sigs.k8s.io/external-dns/endpoint"
 	"sigs.k8s.io/external-dns/plan"
@@ -77,8 +78,14 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 		defer p.session.Logout() //nolint:errcheck
 
 		for _, domain := range p.domainFilter.Filters {
+			// Convert domain to punycode for API calls
+			punycodeDomain, err := toPunycode(domain)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert domain '%s' to punycode: %w", domain, err)
+			}
+
 			// some information is on DNS zone itself, query it first
-			zone, err := p.session.InfoDnsZone(domain)
+			zone, err := p.session.InfoDnsZone(punycodeDomain)
 			if err != nil {
 				return nil, fmt.Errorf("unable to query DNS zone info for domain '%v': %v", domain, err)
 			}
@@ -87,7 +94,7 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 				return nil, fmt.Errorf("unexpected error: unable to convert '%s' to uint64", zone.Ttl)
 			}
 			// query the records of the domain
-			recs, err := p.session.InfoDnsRecords(domain)
+			recs, err := p.session.InfoDnsRecords(punycodeDomain)
 			if err != nil {
 				if p.session.LastResponse != nil && p.session.LastResponse.Status == string(nc.StatusError) && p.session.LastResponse.StatusCode == 5029 {
 					p.logger.Debug("no records exist", "domain", domain, "error", err.Error())
@@ -96,19 +103,42 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 				}
 			}
 			p.logger.Info("got DNS records for domain", "domain", domain)
-			for _, rec := range *recs {
-				name := fmt.Sprintf("%s.%s", rec.Hostname, domain)
-				if rec.Hostname == "@" {
+
+			// Group records by Type and Hostname
+			recordGroups := make(map[string][]string)
+			if recs != nil {
+				for _, rec := range *recs {
+					key := fmt.Sprintf("%s:%s", rec.Type, rec.Hostname)
+					destination := rec.Destination
+					if rec.Type == endpoint.RecordTypeMX {
+						if rec.Priority != "" {
+							destination = fmt.Sprintf("%s %s", rec.Priority, rec.Destination)
+						}
+					} else if rec.Type == endpoint.RecordTypeTXT && (!strings.HasPrefix(rec.Destination, "\"") || !strings.HasSuffix(rec.Destination, "\"")) {
+						destination = fmt.Sprintf("\"%s\"", strings.Trim(rec.Destination, "\""))
+					}
+					recordGroups[key] = append(recordGroups[key], destination)
+				}
+			}
+
+			// Create endpoints with multiple destinations
+			for key, destinations := range recordGroups {
+				parts := strings.SplitN(key, ":", 2)
+				if len(parts) != 2 {
+					p.logger.Warn("invalid record key format", "key", key)
+					continue
+				}
+
+				recordType := parts[0]
+				hostname := parts[1]
+
+				name := fmt.Sprintf("%s.%s", hostname, domain)
+				if hostname == "@" {
 					name = domain
 				}
 
-				dest := rec.Destination
-				if rec.Type == endpoint.RecordTypeMX {
-					// MX record format is: "10 mail.foo.bar"
-					dest = fmt.Sprintf("%s %s", rec.Priority, dest)
-				}
-
-				ep := endpoint.NewEndpointWithTTL(name, rec.Type, endpoint.TTL(ttl), dest)
+				// Create endpoint with all destinations
+				ep := endpoint.NewEndpointWithTTL(name, recordType, endpoint.TTL(ttl), destinations...)
 				endpoints = append(endpoints, ep)
 			}
 		}
@@ -138,52 +168,45 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 	perZoneChanges := map[string]*plan.Changes{}
 
 	for _, zoneName := range p.domainFilter.Filters {
-		p.logger.Debug("zone detected", "zone", zoneName)
-
-		perZoneChanges[zoneName] = &plan.Changes{}
-	}
-
-	for _, ep := range changes.Create {
-		zoneName := endpointZoneName(ep, p.domainFilter.Filters)
-		if zoneName == "" {
-			p.logger.Debug("ignoring change since it did not match any zone", "type", "create", "endpoint", ep)
-			continue
+		punycodeZone, err := toPunycode(zoneName)
+		if err != nil {
+			return fmt.Errorf("failed to convert zone name '%s' to punycode: %w", zoneName, err)
 		}
-		p.logger.Debug("planning", "type", "create", "endpoint", ep, "zone", zoneName)
-
-		perZoneChanges[zoneName].Create = append(perZoneChanges[zoneName].Create, ep)
+		p.logger.Debug("zone detected", "zone", punycodeZone)
+		perZoneChanges[punycodeZone] = &plan.Changes{}
 	}
 
-	for _, ep := range changes.UpdateOld {
-		zoneName := endpointZoneName(ep, p.domainFilter.Filters)
-		if zoneName == "" {
-			p.logger.Debug("ignoring change since it did not match any zone", "type", "updateOld", "endpoint", ep)
-			continue
+	processChanges := func(changeType string, endpoints []*endpoint.Endpoint) {
+		for _, ep := range endpoints {
+			zoneName := endpointZoneName(ep, p.domainFilter.Filters)
+			if zoneName == "" {
+				p.logger.Debug("ignoring change since it did not match any zone", "type", changeType, "endpoint", ep)
+				continue
+			}
+			punycodeZone, err := toPunycode(zoneName)
+			if err != nil {
+				p.logger.Error("failed to convert zone name to punycode", "zone", zoneName, "error", err)
+				continue
+			}
+			p.logger.Debug("planning", "type", changeType, "endpoint", ep, "zone", punycodeZone)
+
+			switch changeType {
+			case "create":
+				perZoneChanges[punycodeZone].Create = append(perZoneChanges[punycodeZone].Create, ep)
+			case "updateOld":
+				perZoneChanges[punycodeZone].UpdateOld = append(perZoneChanges[punycodeZone].UpdateOld, ep)
+			case "updateNew":
+				perZoneChanges[punycodeZone].UpdateNew = append(perZoneChanges[punycodeZone].UpdateNew, ep)
+			case "delete":
+				perZoneChanges[punycodeZone].Delete = append(perZoneChanges[punycodeZone].Delete, ep)
+			}
 		}
-		p.logger.Debug("planning", "type", "updateOld", "endpoint", ep, "zone", zoneName)
-
-		perZoneChanges[zoneName].UpdateOld = append(perZoneChanges[zoneName].UpdateOld, ep)
 	}
 
-	for _, ep := range changes.UpdateNew {
-		zoneName := endpointZoneName(ep, p.domainFilter.Filters)
-		if zoneName == "" {
-			p.logger.Debug("ignoring change since it did not match any zone", "type", "updateNew", "endpoint", ep)
-			continue
-		}
-		p.logger.Debug("planning", "type", "updateNew", "endpoint", ep, "zone", zoneName)
-		perZoneChanges[zoneName].UpdateNew = append(perZoneChanges[zoneName].UpdateNew, ep)
-	}
-
-	for _, ep := range changes.Delete {
-		zoneName := endpointZoneName(ep, p.domainFilter.Filters)
-		if zoneName == "" {
-			p.logger.Debug("ignoring change since it did not match any zone", "type", "delete", "endpoint", ep)
-			continue
-		}
-		p.logger.Debug("planning", "type", "delete", "endpoint", ep, "zone", zoneName)
-		perZoneChanges[zoneName].Delete = append(perZoneChanges[zoneName].Delete, ep)
-	}
+	processChanges("create", changes.Create)
+	processChanges("updateOld", changes.UpdateOld)
+	processChanges("updateNew", changes.UpdateNew)
+	processChanges("delete", changes.Delete)
 
 	if p.dryRun {
 		p.logger.Info("dry run - not applying changes")
@@ -235,48 +258,88 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 // convertToNetcupRecord transforms a list of endpoints into a list of Netcup DNS Records
 // returns a pointer to a list of DNS Records
 func convertToNetcupRecord(recs *[]nc.DnsRecord, endpoints []*endpoint.Endpoint, zoneName string, DeleteRecord bool) *[]nc.DnsRecord {
-	records := make([]nc.DnsRecord, len(endpoints))
+	totalRecords := 0
+	for _, ep := range endpoints {
+		totalRecords += len(ep.Targets)
+	}
+	records := make([]nc.DnsRecord, 0, totalRecords)
 
-	for i, ep := range endpoints {
+	punycodeZone, _ := toPunycode(zoneName)
+
+	for _, ep := range endpoints {
+		punycodeDNS, _ := toPunycode(ep.DNSName)
 		recordName := strings.TrimSuffix(ep.DNSName, "."+zoneName)
-		if recordName == zoneName {
+		if recordName == ep.DNSName {
+			recordName = strings.TrimSuffix(punycodeDNS, "."+punycodeZone)
+		}
+		if recordName == zoneName || recordName == punycodeZone || ep.DNSName == zoneName || punycodeDNS == punycodeZone {
 			recordName = "@"
 		}
-		target := ep.Targets[0]
-		if ep.RecordType == endpoint.RecordTypeTXT && strings.HasPrefix(target, "\"heritage=") {
-			target = strings.Trim(ep.Targets[0], "\"")
-		}
-		priority := ""
-		if ep.RecordType == endpoint.RecordTypeMX {
-			// MX record target includes priority: "10 mail.foo.bar"
-			// FIXME: this ignores all errors, i.e. only applies if the format matches
-			parts := strings.Fields(strings.TrimSpace(target))
-			if len(parts) == 2 {
-				_, err := strconv.ParseUint(parts[0], 10, 16)
-				if err == nil {
-					priority = parts[0]
-					target = parts[1]
+
+		for _, target := range ep.Targets {
+			priority := ""
+			destination := strings.Trim(target, "\"")
+
+			if ep.RecordType == endpoint.RecordTypeMX {
+				parts := strings.Fields(strings.TrimSpace(destination))
+				if len(parts) == 2 {
+					_, err := strconv.ParseUint(parts[0], 10, 16)
+					if err == nil {
+						priority = parts[0]
+						destination = parts[1]
+					}
 				}
 			}
-		}
 
-		records[i] = nc.DnsRecord{
-			Id:           getIDforRecord(recordName, target, ep.RecordType, recs),
-			Hostname:     recordName,
-			Type:         ep.RecordType,
-			Priority:     priority,
-			Destination:  target,
-			DeleteRecord: DeleteRecord,
+			id := ""
+			if DeleteRecord {
+				id = getIDforRecord(recordName, target, ep.RecordType, recs)
+				if id == "" {
+					continue
+				}
+			}
+
+			record := nc.DnsRecord{
+				Type:         ep.RecordType,
+				Hostname:     recordName,
+				Priority:     priority,
+				Destination:  destination,
+				Id:           id,
+				DeleteRecord: DeleteRecord,
+			}
+			records = append(records, record)
 		}
 	}
+
 	return &records
 }
 
 // getIDforRecord compares the endpoint with existing records to get the ID from Netcup to ensure it can be safely removed.
 // returns empty string if no match found
 func getIDforRecord(recordName string, target string, recordType string, recs *[]nc.DnsRecord) string {
+	if recs == nil {
+		return ""
+	}
+	targetToCompare := strings.Trim(target, "\"")
+	priorityToCompare := ""
+	if recordType == endpoint.RecordTypeMX {
+		parts := strings.Fields(strings.TrimSpace(targetToCompare))
+		if len(parts) == 2 {
+			_, err := strconv.ParseUint(parts[0], 10, 16)
+			if err == nil {
+				priorityToCompare = parts[0]
+				targetToCompare = parts[1]
+			}
+		}
+	}
+
 	for _, rec := range *recs {
-		if recordType == rec.Type && target == rec.Destination && rec.Hostname == recordName {
+		recDestinationToCompare := strings.Trim(rec.Destination, "\"")
+
+		if recordType == rec.Type && targetToCompare == recDestinationToCompare && rec.Hostname == recordName {
+			if recordType == endpoint.RecordTypeMX && priorityToCompare != "" && rec.Priority != priorityToCompare {
+				continue
+			}
 			return rec.Id
 		}
 	}
@@ -288,8 +351,10 @@ func getIDforRecord(recordName string, target string, recordType string, recs *[
 // returns empty string if no match found
 func endpointZoneName(endpoint *endpoint.Endpoint, zones []string) (zone string) {
 	var matchZoneName = ""
+	epPuny, _ := toPunycode(endpoint.DNSName)
 	for _, zoneName := range zones {
-		if strings.HasSuffix(endpoint.DNSName, zoneName) && len(zoneName) > len(matchZoneName) {
+		zonePuny, _ := toPunycode(zoneName)
+		if (strings.HasSuffix(endpoint.DNSName, zoneName) || strings.HasSuffix(epPuny, zonePuny)) && len(zoneName) > len(matchZoneName) {
 			matchZoneName = zoneName
 		}
 	}
@@ -306,4 +371,15 @@ func (p *NetcupProvider) ensureLogin() error {
 	p.session = session
 	p.logger.Debug("successfully logged in to Netcup DNS API")
 	return nil
+}
+
+// toPunycode converts a domain name to punycode format
+// This is necessary for umlaut domains (e.g., müller.de -> xn--mller-kva.de)
+func toPunycode(domain string) (string, error) {
+	punycode, err := idna.ToASCII(domain)
+	if err != nil {
+		return "", fmt.Errorf("failed to convert domain '%s' to punycode: %w", domain, err)
+	}
+
+	return punycode, nil
 }
