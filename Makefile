@@ -1,6 +1,6 @@
 .PHONY: build
 build:
-	goreleaser build --snapshot --single-target --clean -o external-dns-netcup-webhook
+	go build -o external-dns-netcup-webhook .
 
 .PHONY: lint
 lint:
