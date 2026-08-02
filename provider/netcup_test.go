@@ -29,6 +29,7 @@ import (
 )
 
 func TestNetcupProvider(t *testing.T) {
+	t.Run("EndpointZoneName", testEndpointZoneName)
 	t.Run("GetIDforRecord", testGetIDforRecord)
 	t.Run("ConvertToNetcupRecord", testConvertToNetcupRecord)
 	t.Run("ConvertToNetcupRecordMultiTarget", testConvertToNetcupRecordMultiTarget)
@@ -873,6 +874,55 @@ func testToPunycode(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tc.expected, result)
 			}
+		})
+	}
+}
+
+func testEndpointZoneName(t *testing.T) {
+	zones := []string{"example.com", "foo.example.com", "münchen.de"}
+
+	tests := []struct {
+		name     string
+		endpoint string
+		expected string
+	}{
+		{
+			name:     "subdomain match",
+			endpoint: "bar.example.com",
+			expected: "example.com",
+		},
+		{
+			name:     "longest zone match",
+			endpoint: "bar.foo.example.com",
+			expected: "foo.example.com",
+		},
+		{
+			name:     "apex match",
+			endpoint: "example.com",
+			expected: "example.com",
+		},
+		{
+			name:     "no match",
+			endpoint: "other.org",
+			expected: "",
+		},
+		{
+			name:     "IDN unicode match",
+			endpoint: "app.münchen.de",
+			expected: "münchen.de",
+		},
+		{
+			name:     "IDN punycode endpoint match",
+			endpoint: "app.xn--mnchen-3ya.de",
+			expected: "münchen.de",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ep := &endpoint.Endpoint{DNSName: tt.endpoint}
+			matchedZone := endpointZoneName(ep, zones)
+			assert.Equal(t, tt.expected, matchedZone)
 		})
 	}
 }
