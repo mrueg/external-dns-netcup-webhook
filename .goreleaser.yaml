@@ -1,0 +1,60 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: external-dns-netcup-webhook
+    main: .
+    binary: external-dns-netcup-webhook
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/prometheus/common/version.Version={{.Version}} -X github.com/prometheus/common/version.Revision={{.FullCommit}} -X github.com/prometheus/common/version.Branch={{.Branch}} -X github.com/prometheus/common/version.BuildUser=goreleaser -X github.com/prometheus/common/version.BuildDate={{.Date}}
+
+kos:
+  - id: external-dns-netcup-webhook
+    build: external-dns-netcup-webhook
+    main: .
+    repositories:
+      - ghcr.io/mrueg/external-dns-netcup-webhook
+    tags:
+      - "{{ .Version }}"
+      - "{{ .Tag }}"
+      - latest
+    bare: true
+    preserve_import_paths: false
+    base_import_paths: false
+    platforms:
+      - linux/amd64
+      - linux/arm64
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ .Tag }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
