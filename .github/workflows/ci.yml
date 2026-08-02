@@ -3,6 +3,7 @@ name: ci
 on:
   push:
     branches: ['main']
+    tags: ['*']
   pull_request:
     branches: ['main']
   release:
@@ -54,6 +55,7 @@ jobs:
           make build
 
   build-and-push-binaries:
+    needs: [golangci, test, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
