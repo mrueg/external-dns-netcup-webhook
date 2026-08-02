@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -122,7 +123,14 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 			}
 
 			// Create endpoints with multiple destinations
-			for key, destinations := range recordGroups {
+			keys := make([]string, 0, len(recordGroups))
+			for k := range recordGroups {
+				keys = append(keys, k)
+			}
+			slices.Sort(keys)
+
+			for _, key := range keys {
+				destinations := recordGroups[key]
 				parts := strings.SplitN(key, ":", 2)
 				if len(parts) != 2 {
 					p.logger.Warn("invalid record key format", "key", key)
@@ -214,7 +222,14 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 	}
 
 	// Assemble changes per zone and prepare it for the Netcup API client
-	for zoneName, c := range perZoneChanges {
+	zoneNames := make([]string, 0, len(perZoneChanges))
+	for z := range perZoneChanges {
+		zoneNames = append(zoneNames, z)
+	}
+	slices.Sort(zoneNames)
+
+	for _, zoneName := range zoneNames {
+		c := perZoneChanges[zoneName]
 		// Gather records from API to extract the record ID which is necessary for updating/deleting the record
 		recs, err := p.session.InfoDnsRecords(zoneName)
 		if err != nil {
@@ -266,10 +281,16 @@ func convertToNetcupRecord(recs *[]nc.DnsRecord, endpoints []*endpoint.Endpoint,
 	}
 	records := make([]nc.DnsRecord, 0, totalRecords)
 
-	punycodeZone, _ := toPunycode(zoneName)
+	punycodeZone, err := toPunycode(zoneName)
+	if err != nil {
+		punycodeZone = zoneName
+	}
 
 	for _, ep := range endpoints {
-		punycodeDNS, _ := toPunycode(ep.DNSName)
+		punycodeDNS, err := toPunycode(ep.DNSName)
+		if err != nil {
+			punycodeDNS = ep.DNSName
+		}
 		recordName := strings.TrimSuffix(ep.DNSName, "."+zoneName)
 		if recordName == ep.DNSName {
 			recordName = strings.TrimSuffix(punycodeDNS, "."+punycodeZone)
@@ -353,11 +374,21 @@ func getIDforRecord(recordName string, target string, recordType string, recs *[
 // returns empty string if no match found
 func endpointZoneName(endpoint *endpoint.Endpoint, zones []string) (zone string) {
 	var matchZoneName = ""
-	epPuny, _ := toPunycode(endpoint.DNSName)
+	var matchZonePuny = ""
+	epPuny, err := toPunycode(endpoint.DNSName)
+	if err != nil {
+		epPuny = endpoint.DNSName
+	}
+
 	for _, zoneName := range zones {
-		zonePuny, _ := toPunycode(zoneName)
-		if (strings.HasSuffix(endpoint.DNSName, zoneName) || strings.HasSuffix(epPuny, zonePuny)) && len(zoneName) > len(matchZoneName) {
+		zonePuny, err := toPunycode(zoneName)
+		if err != nil {
+			zonePuny = zoneName
+		}
+
+		if (strings.HasSuffix(endpoint.DNSName, zoneName) || strings.HasSuffix(epPuny, zonePuny)) && len(zonePuny) > len(matchZonePuny) {
 			matchZoneName = zoneName
+			matchZonePuny = zonePuny
 		}
 	}
 	return matchZoneName
