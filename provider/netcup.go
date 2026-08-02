@@ -220,8 +220,10 @@ func (p *NetcupProvider) ApplyChanges(ctx context.Context, changes *plan.Changes
 		if err != nil {
 			if p.session.LastResponse != nil && p.session.LastResponse.Status == string(nc.StatusError) && p.session.LastResponse.StatusCode == 5029 {
 				p.logger.Debug("no records exist", "zone", zoneName, "error", err.Error())
+				emptyRecs := make([]nc.DnsRecord, 0)
+				recs = &emptyRecs
 			} else {
-				p.logger.Error("unable to get DNS records for domain", "zone", zoneName, "error", err.Error())
+				return fmt.Errorf("unable to get DNS records for zone '%s': %w", zoneName, err)
 			}
 		}
 		change := &NetcupChange{

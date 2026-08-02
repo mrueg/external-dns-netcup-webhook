@@ -80,7 +80,7 @@ func main() {
 	// Run Metrics server
 	{
 		g.Add(func() error {
-			logger.Info("Started external-dns-netcup-webhook metrics server", "address", metricsListenAddr)
+			logger.Info("Started external-dns-netcup-webhook metrics server", "address", *metricsListenAddr)
 			return web.ListenAndServe(&metricsServer, &metricsFlags, logger)
 		}, func(error) {
 			ctxShutDown, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -91,7 +91,7 @@ func main() {
 	// Run webhook API server
 	{
 		g.Add(func() error {
-			logger.Info("Started external-dns-netcup-webhook webhook server", "address", listenAddr)
+			logger.Info("Started external-dns-netcup-webhook webhook server", "address", *listenAddr)
 			return web.ListenAndServe(&webhookServer, &webhookFlags, logger)
 		}, func(error) {
 			ctxShutDown, cancel := context.WithTimeout(context.Background(), 3*time.Second)
