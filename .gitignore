@@ -21,3 +21,4 @@
 go.work
 
 external-dns-netcup-webhook
+dist/
