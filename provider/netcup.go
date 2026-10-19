@@ -110,15 +110,7 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 			if recs != nil {
 				for _, rec := range *recs {
 					key := fmt.Sprintf("%s:%s", rec.Type, rec.Hostname)
-					destination := rec.Destination
-					if rec.Type == endpoint.RecordTypeMX {
-						if rec.Priority != "" {
-							destination = fmt.Sprintf("%s %s", rec.Priority, rec.Destination)
-						}
-					} else if rec.Type == endpoint.RecordTypeTXT {
-						destination = strings.Trim(rec.Destination, "\"")
-					}
-					recordGroups[key] = append(recordGroups[key], destination)
+					recordGroups[key] = append(recordGroups[key], recordTarget(rec))
 				}
 			}
 
@@ -335,6 +327,21 @@ func convertToNetcupRecord(recs *[]nc.DnsRecord, endpoints []*endpoint.Endpoint,
 	}
 
 	return &records
+}
+
+// recordTarget converts a Netcup record destination into an external-dns endpoint target.
+// MX records get their priority prepended. TXT records are returned without surrounding
+// quotes, so they match the unquoted targets external-dns plans with and are not updated on every run.
+func recordTarget(rec nc.DnsRecord) string {
+	switch rec.Type {
+	case endpoint.RecordTypeMX:
+		if rec.Priority != "" {
+			return fmt.Sprintf("%s %s", rec.Priority, rec.Destination)
+		}
+	case endpoint.RecordTypeTXT:
+		return strings.Trim(rec.Destination, "\"")
+	}
+	return rec.Destination
 }
 
 // getIDforRecord compares the endpoint with existing records to get the ID from Netcup to ensure it can be safely removed.

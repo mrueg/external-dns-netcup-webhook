@@ -377,26 +377,22 @@ func testTxtRecordHandling(t *testing.T) {
 		DeleteRecord: false,
 	}
 
-	// Test that when we process these records, TXT records get quotes added
-	// This simulates the Records() function behavior
-	destinationTxt := ncTxtRecord.Destination
-	if ncTxtRecord.Type == "TXT" {
-		destinationTxt = fmt.Sprintf("\"%s\"", ncTxtRecord.Destination)
-	}
+	// TXT records are returned without quotes by Records()
+	destinationTxt := recordTarget(ncTxtRecord)
+	assert.Equal(t, "heritage=external-dns,external-dns/owner=default", destinationTxt)
 
-	destinationA := ncARecord.Destination
-	if ncARecord.Type == "TXT" {
-		destinationA = fmt.Sprintf("\"%s\"", ncARecord.Destination)
-	}
-
-	// TXT record should have quotes added
-	assert.Equal(t, "\"heritage=external-dns,external-dns/owner=default\"", destinationTxt)
+	// Quotes stored at Netcup are stripped as well
+	quotedTxtRecord := ncTxtRecord
+	quotedTxtRecord.Destination = "\"v=DMARC1; p=quarantine\""
+	assert.Equal(t, "v=DMARC1; p=quarantine", recordTarget(quotedTxtRecord))
 
 	// A record should remain unchanged
-	assert.Equal(t, "192.168.1.1", destinationA)
+	assert.Equal(t, "192.168.1.1", recordTarget(ncARecord))
 
-	// Test heritage detection still works
-	assert.True(t, strings.HasPrefix(destinationTxt, "\"heritage="))
+	// Test heritage detection still works on unquoted targets
+	labels, err := endpoint.NewLabelsFromString(destinationTxt, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, "default", labels[endpoint.OwnerLabelKey])
 
 	// Test that the processed target can be used in convertToNetcupRecord
 	ep := endpoint.Endpoint{
@@ -462,14 +458,9 @@ func testTxtRecordRestartScenario(t *testing.T) {
 		DeleteRecord: false,
 	}
 
-	// Step 3: Simulate the Records() function behavior - add quotes back
-	destination := ncRecord.Destination
-	if ncRecord.Type == "TXT" {
-		destination = fmt.Sprintf("\"%s\"", ncRecord.Destination)
-	}
-
-	// The destination should now have quotes, making it recognizable by external-dns
-	assert.Equal(t, "\"heritage=external-dns,external-dns/owner=default,external-dns/resource=service/default/nginx\"", destination)
+	// Step 3: Convert the record the same way Records() does
+	destination := recordTarget(ncRecord)
+	assert.Equal(t, "heritage=external-dns,external-dns/owner=default,external-dns/resource=service/default/nginx", destination)
 
 	// Step 4: Verify that external-dns can now recognize this as its own record
 	// This would be the endpoint that external-dns creates when reading the record
@@ -489,8 +480,11 @@ func testTxtRecordRestartScenario(t *testing.T) {
 	assert.Equal(t, "", (*updateResult)[0].Id, "Update records should have empty IDs (for new values)")
 	assert.False(t, (*updateResult)[0].DeleteRecord, "Update record should not be marked for deletion")
 
-	// Step 6: Verify heritage detection still works
-	assert.True(t, strings.HasPrefix(destination, "\"heritage="))
+	// Step 6: Verify external-dns can still parse the ownership labels
+	labels, err := endpoint.NewLabelsFromString(destination, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, "default", labels[endpoint.OwnerLabelKey])
+	assert.Equal(t, "service/default/nginx", labels[endpoint.ResourceLabelKey])
 }
 
 func testNewNetcupProvider(t *testing.T) {
