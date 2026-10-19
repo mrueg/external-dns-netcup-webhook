@@ -115,8 +115,8 @@ func (p *NetcupProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 						if rec.Priority != "" {
 							destination = fmt.Sprintf("%s %s", rec.Priority, rec.Destination)
 						}
-					} else if rec.Type == endpoint.RecordTypeTXT && (!strings.HasPrefix(rec.Destination, "\"") || !strings.HasSuffix(rec.Destination, "\"")) {
-						destination = fmt.Sprintf("\"%s\"", strings.Trim(rec.Destination, "\""))
+					} else if rec.Type == endpoint.RecordTypeTXT {
+						destination = strings.Trim(rec.Destination, "\"")
 					}
 					recordGroups[key] = append(recordGroups[key], destination)
 				}
